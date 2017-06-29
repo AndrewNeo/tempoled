@@ -1,0 +1,27 @@
+{ 
+"version": "0.1.0", 
+"command": "particle", 
+"isShellCommand": true, 
+"args": [], 
+"showOutput": "always", 
+"echoCommand": true, 
+"tasks": [ 
+    { 
+        "taskName": "compile", 
+        "suppressTaskName": false, 
+        "isBuildCommand": true,
+        "args": ["photon", "${workspaceRoot}", "--saveTo", "${workspaceRoot}/firmware.bin"]             
+    }, 
+    { 
+        "taskName": "flash-usb",             
+        "suppressTaskName": false, 
+        "isTestCommand": true, 
+        "args": ["--usb", "firmware.bin"] 
+    },
+    { 
+        "taskName": "flash-device",             
+        "suppressTaskName": false, 
+        "isTestCommand": true, 
+        "args": ["${env:ParticleDeviceId}", "firmware.bin"] 
+    }]
+}
