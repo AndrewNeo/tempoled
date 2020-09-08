@@ -1,1 +1,4 @@
 *.bin
+lib
+src/tempoled.cpp
+target

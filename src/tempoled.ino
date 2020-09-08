@@ -1,17 +1,28 @@
 #include <SH1106.h>
+#include "OLEDDisplayUi2.h"
 
-#define UPDATE_PERIOD 30*1000
-#define HALF 128/2
+#define UPDATE_PERIOD 10*1000
+#define HALF DISPLAY_WIDTH/2
+#define BALL_COUNT 3
 
 
 // Initialize the OLED display
 SH1106 display(0x3c);
+OLEDDisplayUi2 ui ( &display );
 
-long lastUpdate, lastDraw;
-String indoor, outdoor;
+
+// Global variables
+
+long lastUpdate;
+String indoorF, outdoorF;
 static const String f_degF = "%s°F";
 static const String f_lastUpdate = "Updated %d min ago";
+static const String f_curTime_date = "%a %B %e";
+static const String f_curTime_time = "%l:%M%p";
+static const String f_curTime = f_curTime_date + "  " + f_curTime_time;
 
+
+// Function callbacks
 
 // 123,-234
 int tempUpdate(String data) {
@@ -19,70 +30,133 @@ int tempUpdate(String data) {
 
   int commapos = data.indexOf(",");
   if (commapos > -1) {
-    indoor = data.substring(0, commapos).substring(0, 3);
-    outdoor = data.substring(commapos+1).substring(0, 3);
+    indoorF = data.substring(0, commapos).substring(0, 3);
+    outdoorF = data.substring(commapos+1).substring(0, 3);
   } else {
-    indoor = data.substring(0, 3);
-    outdoor = "XX";
+    indoorF = data.substring(0, 3);
+    outdoorF = "XX";
   }
 
-  drawTempDisplay();
+  ui.invalidateCurrentFrame();
 
   return 0;
 }
 
 
-void drawWaitingDisplay() {
-  display.clear();
+// Display frames
 
-  display.setFont(ArialMT_Plain_10);
-  display.drawString(0, 0, "Waiting for update.");
+void drawClock(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
+  // Show current time
+  time_t time = Time.now();
+  display->setFont(ArialMT_Plain_16);
+  
+  display->drawString(0 + x, 0 + y, Time.format(time, f_curTime_date));
+  display->drawString(0 + x, 20 + y, Time.format(time, f_curTime_time));
 
-  display.display();
-
-  delay(10);
+  state->isFrameDoneRendering = true;
 }
 
-void drawTempDisplay() {
-  display.clear();
 
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-  display.setFont(ArialMT_Plain_10);
-  display.drawString(0, 0, "Indoor");
-  display.setFont(ArialMT_Plain_24);
-  display.drawString(0, 12, String::format(f_degF, indoor.c_str()));
+void drawTempDisplay(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
+  display->setTextAlignment(TEXT_ALIGN_LEFT);
+  display->setFont(ArialMT_Plain_10);
 
-  display.setFont(ArialMT_Plain_10);
-  display.drawString(HALF-2, 0, "Outdoor");
-  display.setFont(ArialMT_Plain_24);
-  display.drawString(HALF-2, 12, String::format(f_degF, outdoor.c_str()));
+  if (lastUpdate > 0) {
+    display->drawString(0 + x, 0 + y, "Indoor");
+    display->setFont(ArialMT_Plain_24);
+    display->drawString(0 + x, 12 + y, String::format(f_degF, indoorF.c_str()));
 
-  int lastMin = (millis() - lastUpdate) / 60 / 1000;
-  display.setFont(ArialMT_Plain_10);
-  display.drawString(0, 50, String::format(f_lastUpdate, lastMin));
+    display->setFont(ArialMT_Plain_10);
+    display->drawString((HALF - 2) + x, 0 + y, "Outdoor");
+    display->setFont(ArialMT_Plain_24);
+    display->drawString((HALF - 2) + x, 12 + y, String::format(f_degF, outdoorF.c_str()));
 
-  display.display();
+    // Show current time
+    display->setFont(ArialMT_Plain_10);
+    display->drawString(0 + x, 38 + y, Time.format(Time.now(), f_curTime));
+
+    // Show last update in minutes
+    int lastMin = (millis() - lastUpdate) / 60 / 1000;
+    display->setFont(ArialMT_Plain_10);
+    display->drawString(0 + x, 50 + y, String::format(f_lastUpdate, lastMin));
+  } else {
+    display->drawString(0 + x, 0 + y, "Waiting for update.");
+    display->drawString(0 + x, 38 + y, Time.format(Time.now(), f_curTime));
+  }
+
+  state->isFrameDoneRendering = true;
 }
 
+
+struct BouncyBall {
+  uint8_t bounceX, bounceY;
+  int8_t bounceVecX, bounceVecY;
+};
+BouncyBall balls[BALL_COUNT];
+
+void drawBounce(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
+  if (state->isFirstTick) {
+    // Reset bounce vectors
+    for (uint8_t i = 0; i < BALL_COUNT; i++) {
+      balls[i].bounceX = random(0, DISPLAY_WIDTH);
+      balls[i].bounceY = random(0, DISPLAY_HEIGHT);
+      balls[i].bounceVecX = random(2, 6);
+      balls[i].bounceVecY = random(1, 5);
+    }
+  }
+
+  if (state->frameState == FIXED && state->ticksSinceLastStateSwitch > 0) {
+    for (uint8_t i = 0; i < BALL_COUNT; i++) {
+      // Bounce against walls
+      if (((balls[i].bounceX + balls[i].bounceVecX) > DISPLAY_WIDTH) || ((balls[i].bounceX + balls[i].bounceVecX) < 0)) {
+        balls[i].bounceVecX = -balls[i].bounceVecX;
+      }
+      if (((balls[i].bounceY + balls[i].bounceVecY) > DISPLAY_HEIGHT) || ((balls[i].bounceY + balls[i].bounceVecY) < 0)) {
+        balls[i].bounceVecY = -balls[i].bounceVecY;
+      }
+
+      // Move at determined vector
+      balls[i].bounceX += balls[i].bounceVecX;
+      balls[i].bounceY += balls[i].bounceVecY;
+
+      // Draw
+      display->fillCircle(balls[i].bounceX + x, balls[i].bounceY + y, 2);
+    }
+  }
+}
+
+
+FrameCallback frames[] = { drawClock, drawTempDisplay, drawBounce, drawTempDisplay };
+int frameCount = 4;
+
+
+// Main loop
 
 void setup() {
   Particle.function("update", tempUpdate);
+  Time.zone(-7); // TODO: Don't hardcode this
 
   Serial.begin(115200);
   Serial.println();
   Serial.println();
 
-  display.init();
-  display.flipScreenVertically();
+  ui.setTargetFPS(30);
+  ui.setFrameAnimation(SLIDE_LEFT);
+  ui.setFrames(frames, frameCount);
+  ui.enableAutoTransition();
+  ui.setTimePerFrame(10*1000);
+  ui.init();
 
-  drawWaitingDisplay();
+  display.flipScreenVertically();
 }
 
 void loop() {
+  int8_t remainingTimeBudget = ui.update();
 
-  if (lastUpdate > 0) {
-    drawTempDisplay();
+  if (remainingTimeBudget > 0) {
+    // Do extra stuff if we need to
+
+    // Delay for the rest
+    delay(remainingTimeBudget);
   }
-
-  delay(UPDATE_PERIOD);  
 }
