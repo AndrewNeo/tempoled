@@ -1,6 +1,6 @@
 {
     "particle.targetDevice": "temputron",
-    "particle.firmwareVersion": "1.2.1",
+    "particle.firmwareVersion": "1.5.2",
     "particle.targetPlatform": "photon",
     "cortex-debug.openocdPath": "${command:particle.getDebuggerOpenocdPath}"
 }
